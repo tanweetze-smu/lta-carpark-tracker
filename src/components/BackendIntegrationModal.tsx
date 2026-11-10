@@ -58,37 +58,20 @@ export const BackendIntegrationModal: React.FC<BackendIntegrationModalProps> = (
     }
   };
 
-  const sampleExpressSnippet = `// Example Express proxy for data.gov.sg & LTA DataMall
-// File: server.ts
-import express from 'express';
-
-const app = express();
-app.use(express.json());
-
-// Proxy endpoint that ParkSG connects to
-app.get('/api/carparks', async (req, res) => {
-  try {
-    // 1. Fetch HDB lots from data.gov.sg
-    const dataGovRes = await fetch(
-      'https://api.data.gov.sg/v1/transport/carpark-availability'
-    );
-    const dataGovJson = await dataGovRes.json();
-    
-    // 2. Fetch Mall lots from LTA DataMall (Requires LTA API Key)
-    // const ltaRes = await fetch('http://datamall2.mytransport.sg/ltaodataservice/CarParkAvailabilityv2', {
-    //   headers: { AccountKey: process.env.LTA_DATAMALL_KEY || '' }
-    // });
-    
-    // 3. Return merged array of carparks matching CarparkRecord interface
-    res.json({
-      status: 'success',
-      timestamp: new Date().toISOString(),
-      items: dataGovJson.items?.[0]?.carpark_data || []
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch Singapore carparks' });
-  }
-});`;
+  const sampleExpressSnippet = `// Serverless LTA DataMall Endpoints
+// Files: /api/carparkavailability.ts & /api/health.ts
+//
+// 1. Live carpark lots (HDB + LTA + URA):
+// GET /api/carparkavailability
+// Hits: https://datamall2.mytransport.sg/ltaodataservice/CarParkAvailabilityv2
+// Header: AccountKey: process.env.LTA_DATAMALL_KEY
+//
+// 2. Health check:
+// GET /api/health
+//
+// In server.ts:
+// app.get('/api/health', (req, res) => healthHandler(req, res));
+// app.get('/api/carparkavailability', (req, res) => carparkAvailabilityHandler(req, res));`;
 
   const copyCodeToClipboard = () => {
     navigator.clipboard.writeText(sampleExpressSnippet);

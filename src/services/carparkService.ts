@@ -13,7 +13,7 @@ export interface ApiConfig {
 
 export const DEFAULT_API_CONFIG: ApiConfig = {
   useCustomBackend: false,
-  customBackendUrl: '/api/carparks',
+  customBackendUrl: '/api/carparkavailability',
   apiKey: '',
   autoRefreshIntervalSecs: 30,
 };
@@ -116,29 +116,83 @@ export class CarparkService {
           'Content-Type': 'application/json',
         };
         if (config.apiKey) {
+          headers['AccountKey'] = config.apiKey;
           headers['Authorization'] = `Bearer ${config.apiKey}`;
-          headers['AccountKey'] = config.apiKey; // Common for LTA DataMall
         }
 
         const res = await fetch(config.customBackendUrl, { headers });
         if (!res.ok) {
-          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(errBody.message || `HTTP ${res.status}: ${res.statusText}`);
         }
         const data = await res.json();
         
-        // Standardize whatever backend returned or merge
-        const parsedCarparks = Array.isArray(data) ? data : data.items || data.value || [];
-        if (parsedCarparks.length > 0) {
-          const processed = parsedCarparks.map((cp: CarparkRecord) => {
-            const distance = userLoc
-              ? calculateDistanceKm(userLoc.lat, userLoc.lng, cp.coordinates.lat, cp.coordinates.lng)
-              : undefined;
-            return {
-              ...cp,
-              isFavorite: this.favorites.has(cp.id),
-              distanceKm: distance,
+        // Handle raw or normalized LTA items
+        const rawList = Array.isArray(data) ? data : data.items || data.value || [];
+        if (rawList.length > 0) {
+          const processed: CarparkRecord[] = rawList.map((item: any, index: number) => {
+            // Check if already in CarparkRecord format
+            if (item.lots && item.coordinates) {
+              const distance = userLoc
+                ? calculateDistanceKm(userLoc.lat, userLoc.lng, item.coordinates.lat, item.coordinates.lng)
+                : undefined;
+              return {
+                ...item,
+                isFavorite: this.favorites.has(item.id),
+                distanceKm: distance,
+              };
+            }
+
+            // Otherwise map from LTA DataMall structure
+            let lat = 1.3521;
+            let lng = 103.8198;
+            if (item.Location && typeof item.Location === 'string') {
+              const parts = item.Location.trim().split(/\s+/);
+              if (parts.length >= 2) {
+                lat = parseFloat(parts[0]) || lat;
+                lng = parseFloat(parts[1]) || lng;
+              }
+            } else if (item.coordinates) {
+              lat = item.coordinates.lat;
+              lng = item.coordinates.lng;
+            }
+
+            const availLots = Number(item.AvailableLots) || Number(item.availableLots) || 0;
+            const totalEst = Math.max(availLots + 50, 200);
+
+            const record: CarparkRecord = {
+              id: String(item.CarParkID || item.id || `LTA-${index + 1}`),
+              name: item.Development || item.name || `Carpark ${item.CarParkID}`,
+              agency: (item.Agency || item.agency || 'LTA') as any,
+              address: item.Area ? `${item.Area}, Singapore` : 'Singapore',
+              postalCode: 'Singapore',
+              district: (item.Area?.includes('Marina') ? 'Marina Bay' : 'Central / Downtown') as any,
+              coordinates: { lat, lng },
+              carparkType: 'Multi-Storey',
+              gantryClearanceHeight: 2.1,
+              rates: {
+                weekdayDay: '$1.40 per 30 mins',
+                weekdayNight: '$0.70 per 30 mins (Cap $5.00)',
+                weekend: '$1.40 per 30 mins',
+                sundayFreeParking: item.Agency === 'HDB',
+                gracePeriodMins: 10,
+                estimatedHourlyPeak: 2.80,
+                estimatedHourlyOffPeak: 1.40,
+              },
+              lots: {
+                car: { total: totalEst, available: availLots },
+              },
+              electronicParkingSystem: true,
+              shortTermParking: 'Whole Day',
+              nightParking: true,
+              lastUpdated: item.lastUpdated || new Date().toISOString(),
+              occupancyTrend: [45, 55, 70, 85, 90, 88, 80, 75, 60, 50, 40, 30],
+              isFavorite: this.favorites.has(String(item.CarParkID || item.id)),
+              distanceKm: userLoc ? calculateDistanceKm(userLoc.lat, userLoc.lng, lat, lng) : undefined,
             };
+            return record;
           });
+
           return { carparks: processed, isFromLiveBackend: true };
         }
       } catch (err: unknown) {
