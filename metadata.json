@@ -1,0 +1,6 @@
+{
+  "name": "ParkSG - Singapore Carpark Tracker",
+  "description": "Real-time lot availability, rates, clearance heights, and interactive map for HDB, URA, and commercial carparks across Singapore.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
